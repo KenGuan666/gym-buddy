@@ -36,5 +36,5 @@ def load_settings() -> Settings:
         reminder_hour=int(os.getenv("REMINDER_HOUR", "18")),
         reminder_minute=int(os.getenv("REMINDER_MINUTE", "0")),
         snooze_minutes=int(os.getenv("SNOOZE_MINUTES", "60")),
-        db_path=os.getenv("DB_PATH", "data/gym_supervisor.db"),
+        db_path=os.getenv("DB_PATH", "/tmp/gym_supervisor.db"),
     )
