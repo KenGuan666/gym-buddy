@@ -1,0 +1,13 @@
+{
+  "functions": {
+    "api/*.py": {
+      "runtime": "python3.12"
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/morning_greeting",
+      "schedule": "0 * * * *"
+    }
+  ]
+}
