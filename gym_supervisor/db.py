@@ -526,9 +526,24 @@ class GymDB:
     def period_workout_summary(self, start: datetime, end: datetime) -> dict[str, object]:
         by_workout_type = self.summarize_sets_by_workout_type_between(start, end)
         by_body_area = self.summarize_sets_by_body_area_between(start, end)
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT COALESCE(SUM(reps * weight), 0) AS total_volume
+                FROM workout_entries
+                WHERE logged_at >= %s AND logged_at < %s
+                """,
+                (
+                    start.isoformat(timespec="seconds"),
+                    end.isoformat(timespec="seconds"),
+                ),
+            ).fetchone()
+        total_volume = float(row["total_volume"]) if row else 0.0
         return {
             "workouts": self.count_workouts_between(start, end),
+            "skips": self.count_snoozes_between(start, end),
             "total_sets": sum(by_workout_type.values()),
+            "total_volume": total_volume,
             "by_workout_type": by_workout_type,
             "by_body_area": by_body_area,
         }

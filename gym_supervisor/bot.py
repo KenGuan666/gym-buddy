@@ -332,7 +332,9 @@ class GymSupervisorBot:
 
         summary = self._db.period_workout_summary(start, end)
         workouts = int(summary["workouts"])
+        skips = int(summary["skips"])
         total_sets = int(summary["total_sets"])
+        total_volume = float(summary["total_volume"])
         by_workout_type = dict(summary["by_workout_type"])
         by_body_area = dict(summary["by_body_area"])
 
@@ -340,7 +342,9 @@ class GymSupervisorBot:
             f"Workout summary ({period_label})",
             f"Window: {start.date().isoformat()} to {end.date().isoformat()}",
             f"Workouts: {workouts}",
+            f"Skips (snoozes): {skips}",
             f"Total sets: {total_sets}",
+            f"Total volume: {total_volume:.1f}",
             "",
         ]
         lines.extend(self._format_breakdown_lines("By workout type:", by_workout_type))
