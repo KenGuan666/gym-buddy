@@ -267,6 +267,14 @@ class GymDB:
             )
             conn.execute(
                 """
+                CREATE TABLE IF NOT EXISTS monthly_reports (
+                    period_start TEXT PRIMARY KEY,
+                    sent_at TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
                 CREATE TABLE IF NOT EXISTS move_body_areas (
                     move_key TEXT PRIMARY KEY,
                     display_label TEXT NOT NULL,
@@ -450,6 +458,21 @@ class GymDB:
             ).fetchone()
         return int(row["c"])
 
+    def count_snoozes_between(self, start: datetime, end: datetime) -> int:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT COUNT(*) AS c
+                FROM snoozes
+                WHERE logged_at >= %s AND logged_at < %s
+                """,
+                (
+                    start.isoformat(timespec="seconds"),
+                    end.isoformat(timespec="seconds"),
+                ),
+            ).fetchone()
+        return int(row["c"])
+
     def count_workouts_this_week(self, week_start: datetime, week_end: datetime) -> int:
         return self.count_workouts_between(week_start, week_end)
 
@@ -522,6 +545,49 @@ class GymDB:
                 (week_start.isoformat(), milestone),
             ).fetchone()
         return row is not None
+
+    def monthly_report_sent(self, period_start: date) -> bool:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT 1
+                FROM monthly_reports
+                WHERE period_start = %s
+                LIMIT 1
+                """,
+                (period_start.isoformat(),),
+            ).fetchone()
+        return row is not None
+
+    def mark_monthly_report_sent(self, period_start: date) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO monthly_reports (period_start, sent_at)
+                VALUES (%s, %s)
+                ON CONFLICT (period_start) DO NOTHING
+                """,
+                (
+                    period_start.isoformat(),
+                    self._now_pacific_naive().isoformat(timespec="seconds"),
+                ),
+            )
+
+    def workouts_between(self, start: datetime, end: datetime) -> list[WorkoutLog]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT logged_at, sets, note
+                FROM workouts
+                WHERE logged_at >= %s AND logged_at < %s
+                ORDER BY logged_at ASC
+                """,
+                (
+                    start.isoformat(timespec="seconds"),
+                    end.isoformat(timespec="seconds"),
+                ),
+            ).fetchall()
+        return [WorkoutLog(str(r["logged_at"]), int(r["sets"]), str(r["note"])) for r in rows]
 
     def mark_weekly_nudge_sent(self, week_start: date, milestone: int) -> None:
         with self._connect() as conn:

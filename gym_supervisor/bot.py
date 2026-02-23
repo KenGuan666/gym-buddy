@@ -204,13 +204,15 @@ class GymSupervisorBot:
         await self.send_morning_greeting_now(context.bot)
 
     async def send_morning_greeting_now(self, bot) -> None:
-        pacific_today = datetime.now(ZoneInfo("America/Los_Angeles")).date()
+        pacific_now = datetime.now(ZoneInfo("America/Los_Angeles")).replace(tzinfo=None)
+        pacific_today = pacific_now.date()
         quote = await asyncio.to_thread(self._generate_morning_quote_sync, pacific_today)
         await bot.send_message(
             chat_id=self._config.allowed_user_id,
             text=f"Good morning.\n{quote}\n\nChoose an action:",
             reply_markup=self._main_menu_keyboard(),
         )
+        await self._send_monthly_summary_if_due(bot, pacific_now)
 
     async def _post_init(self, app: Application) -> None:
         await app.bot.send_message(
@@ -364,6 +366,69 @@ class GymSupervisorBot:
             + " > ".join(missing)
             + "."
         )
+
+    @staticmethod
+    def _previous_month_window(now: datetime) -> tuple[date, datetime, datetime, str]:
+        current_month_start = date(now.year, now.month, 1)
+        period_end = datetime.combine(current_month_start, time.min)
+        if now.month == 1:
+            prev_month_start_date = date(now.year - 1, 12, 1)
+        else:
+            prev_month_start_date = date(now.year, now.month - 1, 1)
+        period_start = datetime.combine(prev_month_start_date, time.min)
+        label = prev_month_start_date.strftime("%B %Y")
+        return prev_month_start_date, period_start, period_end, label
+
+    def _build_monthly_report_text(self, now: datetime) -> str:
+        _, period_start, period_end, label = self._previous_month_window(now)
+        summary = self._db.period_workout_summary(period_start, period_end)
+        workouts_done = int(summary["workouts"])
+        total_sets = int(summary["total_sets"])
+        by_workout_type = dict(summary["by_workout_type"])
+        by_body_area = dict(summary["by_body_area"])
+        skipped = self._db.count_snoozes_between(period_start, period_end)
+        workout_logs = self._db.workouts_between(period_start, period_end)
+
+        lines = [
+            f"Monthly summary ({label})",
+            f"Workouts done: {workouts_done}",
+            f"Workouts skipped (snoozes): {skipped}",
+            f"Total sets: {total_sets}",
+            "",
+            "Workouts completed:",
+        ]
+        if not workout_logs:
+            lines.append("- none")
+        else:
+            for workout in workout_logs:
+                ts = str(workout.logged_at).replace("T", " ")
+                note = workout.note.strip()
+                if note:
+                    lines.append(f"- {ts}: {note} ({workout.sets} set(s))")
+                else:
+                    lines.append(f"- {ts}: {workout.sets} set(s)")
+
+        lines.append("")
+        lines.extend(self._format_breakdown_lines("By workout type:", by_workout_type))
+        lines.append("")
+        lines.extend(self._format_breakdown_lines("By body area:", by_body_area))
+        return "\n".join(lines)
+
+    async def _send_monthly_summary_if_due(self, bot, now: datetime) -> None:
+        if now.day != 1:
+            return
+
+        period_start_date, _, _, _ = self._previous_month_window(now)
+        if self._db.monthly_report_sent(period_start_date):
+            return
+
+        text = self._build_monthly_report_text(now)
+        await bot.send_message(
+            chat_id=self._config.allowed_user_id,
+            text=text,
+            reply_markup=self._main_menu_keyboard(),
+        )
+        self._db.mark_monthly_report_sent(period_start_date)
 
     async def _send_period_summary(
         self, update: Update, period: str, context: ContextTypes.DEFAULT_TYPE
