@@ -13,7 +13,7 @@ def get_bot_instance() -> GymSupervisorBot:
     global _bot_instance
     if _bot_instance is None:
         settings = load_settings()
-        db = GymDB(settings.db_path)
+        db = GymDB(settings.database_url)
         _bot_instance = GymSupervisorBot(
             token=settings.telegram_bot_token,
             db=db,

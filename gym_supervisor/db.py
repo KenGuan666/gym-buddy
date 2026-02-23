@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import sqlite3
+import psycopg
 from dataclasses import dataclass
 from datetime import date, datetime
-from pathlib import Path
 import re
 from zoneinfo import ZoneInfo
+from psycopg.rows import dict_row
 
 MOVE_BODY_AREA_SEED: list[tuple[str, str]] = [
     # Chest
@@ -208,15 +208,12 @@ class WorkoutLog:
 
 
 class GymDB:
-    def __init__(self, db_path: str) -> None:
-        self.db_path = db_path
-        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+    def __init__(self, database_url: str) -> None:
+        self.database_url = database_url
         self._init_db()
 
-    def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        return conn
+    def _connect(self) -> psycopg.Connection:
+        return psycopg.connect(self.database_url, row_factory=dict_row)
 
     @staticmethod
     def _now_pacific_naive() -> datetime:
@@ -224,71 +221,67 @@ class GymDB:
 
     def _init_db(self) -> None:
         with self._connect() as conn:
-            conn.executescript(
+            conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS workouts (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    id BIGSERIAL PRIMARY KEY,
                     logged_at TEXT NOT NULL,
                     sets INTEGER NOT NULL,
                     note TEXT DEFAULT ''
-                );
-
+                )
+                """
+            )
+            conn.execute(
+                """
                 CREATE TABLE IF NOT EXISTS workout_entries (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    workout_id INTEGER NOT NULL,
+                    id BIGSERIAL PRIMARY KEY,
+                    workout_id BIGINT NOT NULL REFERENCES workouts(id),
                     workout_type TEXT NOT NULL DEFAULT '',
                     workout_display_name TEXT NOT NULL DEFAULT '',
                     reps INTEGER NOT NULL,
-                    weight REAL NOT NULL,
+                    weight DOUBLE PRECISION NOT NULL,
                     logged_at TEXT NOT NULL,
-                    source_text TEXT DEFAULT '',
-                    FOREIGN KEY(workout_id) REFERENCES workouts(id)
-                );
-
+                    source_text TEXT DEFAULT ''
+                )
+                """
+            )
+            conn.execute(
+                """
                 CREATE TABLE IF NOT EXISTS snoozes (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    id BIGSERIAL PRIMARY KEY,
                     logged_at TEXT NOT NULL,
                     reason TEXT DEFAULT ''
-                );
-
+                )
+                """
+            )
+            conn.execute(
+                """
                 CREATE TABLE IF NOT EXISTS weekly_nudges (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    id BIGSERIAL PRIMARY KEY,
                     week_start TEXT NOT NULL,
                     milestone INTEGER NOT NULL,
                     sent_at TEXT NOT NULL,
                     UNIQUE(week_start, milestone)
-                );
-
+                )
+                """
+            )
+            conn.execute(
+                """
                 CREATE TABLE IF NOT EXISTS move_body_areas (
                     move_key TEXT PRIMARY KEY,
                     display_label TEXT NOT NULL,
                     body_area TEXT NOT NULL
-                );
+                )
                 """
             )
-            self._ensure_workout_type_column(conn)
-            self._ensure_workout_display_name_column(conn)
-            self._ensure_move_body_areas_schema(conn)
+            conn.execute(
+                "ALTER TABLE workout_entries ADD COLUMN IF NOT EXISTS workout_type TEXT NOT NULL DEFAULT ''"
+            )
+            conn.execute(
+                "ALTER TABLE workout_entries ADD COLUMN IF NOT EXISTS workout_display_name TEXT NOT NULL DEFAULT ''"
+            )
             self._seed_move_body_areas(conn)
             self._canonicalize_workout_entry_types(conn)
-
-    @staticmethod
-    def _ensure_workout_type_column(conn: sqlite3.Connection) -> None:
-        cols = conn.execute("PRAGMA table_info(workout_entries)").fetchall()
-        col_names = {str(row["name"]) for row in cols}
-        if "workout_type" not in col_names:
-            conn.execute(
-                "ALTER TABLE workout_entries ADD COLUMN workout_type TEXT NOT NULL DEFAULT ''"
-            )
-
-    @staticmethod
-    def _ensure_workout_display_name_column(conn: sqlite3.Connection) -> None:
-        cols = conn.execute("PRAGMA table_info(workout_entries)").fetchall()
-        col_names = {str(row["name"]) for row in cols}
-        if "workout_display_name" not in col_names:
-            conn.execute(
-                "ALTER TABLE workout_entries ADD COLUMN workout_display_name TEXT NOT NULL DEFAULT ''"
-            )
 
     @staticmethod
     def _normalize_workout_label(value: str) -> str:
@@ -298,45 +291,7 @@ class GymDB:
     def _normalize_workout_type_key(value: str) -> str:
         return re.sub(r"[^a-z0-9]+", "", value.strip().lower())
 
-    @staticmethod
-    def _ensure_move_body_areas_schema(conn: sqlite3.Connection) -> None:
-        cols = conn.execute("PRAGMA table_info(move_body_areas)").fetchall()
-        col_names = {str(row["name"]) for row in cols}
-        if {"move_key", "display_label", "body_area"}.issubset(col_names):
-            return
-
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS move_body_areas_new (
-                move_key TEXT PRIMARY KEY,
-                display_label TEXT NOT NULL,
-                body_area TEXT NOT NULL
-            )
-            """
-        )
-        if {"move_name", "body_area"}.issubset(col_names):
-            rows = conn.execute("SELECT move_name, body_area FROM move_body_areas").fetchall()
-            for row in rows:
-                move_name = str(row["move_name"])
-                move_key = GymDB._normalize_workout_type_key(move_name)
-                if not move_key:
-                    continue
-                display_label = GymDB._normalize_workout_label(move_name)
-                body_area = GymDB._normalize_workout_label(str(row["body_area"]))
-                conn.execute(
-                    """
-                    INSERT INTO move_body_areas_new (move_key, display_label, body_area)
-                    VALUES (?, ?, ?)
-                    ON CONFLICT(move_key) DO UPDATE SET
-                        display_label = excluded.display_label,
-                        body_area = excluded.body_area
-                    """,
-                    (move_key, display_label, body_area),
-                )
-        conn.execute("DROP TABLE move_body_areas")
-        conn.execute("ALTER TABLE move_body_areas_new RENAME TO move_body_areas")
-
-    def _seed_move_body_areas(self, conn: sqlite3.Connection) -> None:
+    def _seed_move_body_areas(self, conn: psycopg.Connection) -> None:
         rows = [
             (
                 self._normalize_workout_type_key(move_name),
@@ -348,7 +303,7 @@ class GymDB:
         conn.executemany(
             """
             INSERT INTO move_body_areas (move_key, display_label, body_area)
-            VALUES (?, ?, ?)
+            VALUES (%s, %s, %s)
             ON CONFLICT(move_key) DO UPDATE SET
                 display_label = excluded.display_label,
                 body_area = excluded.body_area
@@ -356,16 +311,16 @@ class GymDB:
             [row for row in rows if row[0]],
         )
 
-    def _display_label_for_key(self, conn: sqlite3.Connection, workout_key: str) -> str:
+    def _display_label_for_key(self, conn: psycopg.Connection, workout_key: str) -> str:
         row = conn.execute(
-            "SELECT display_label FROM move_body_areas WHERE move_key = ? LIMIT 1",
+            "SELECT display_label FROM move_body_areas WHERE move_key = %s LIMIT 1",
             (workout_key,),
         ).fetchone()
         if row:
             return str(row["display_label"])
         return workout_key
 
-    def _canonicalize_workout_entry_types(self, conn: sqlite3.Connection) -> None:
+    def _canonicalize_workout_entry_types(self, conn: psycopg.Connection) -> None:
         rows = conn.execute(
             "SELECT id, workout_type, workout_display_name FROM workout_entries"
         ).fetchall()
@@ -385,19 +340,19 @@ class GymDB:
             conn.executemany(
                 """
                 UPDATE workout_entries
-                SET workout_type = ?, workout_display_name = ?
-                WHERE id = ?
+                SET workout_type = %s, workout_display_name = %s
+                WHERE id = %s
                 """,
                 updates,
             )
 
-    def _lookup_body_area(self, conn: sqlite3.Connection, workout_type: str) -> str:
+    def _lookup_body_area(self, conn: psycopg.Connection, workout_type: str) -> str:
         key = self._normalize_workout_type_key(workout_type)
         if not key:
             return "unmapped"
 
         exact = conn.execute(
-            "SELECT body_area FROM move_body_areas WHERE move_key = ? LIMIT 1",
+            "SELECT body_area FROM move_body_areas WHERE move_key = %s LIMIT 1",
             (key,),
         ).fetchone()
         if exact:
@@ -429,17 +384,17 @@ class GymDB:
                 raise ValueError("entries must include at least one valid workout type")
 
             cur = conn.execute(
-                "INSERT INTO workouts (logged_at, sets, note) VALUES (?, ?, ?)",
+                "INSERT INTO workouts (logged_at, sets, note) VALUES (%s, %s, %s) RETURNING id",
                 (now, len(normalized_entries), note.strip()),
             )
-            workout_id = int(cur.lastrowid)
+            workout_id = int(cur.fetchone()["id"])
 
             conn.executemany(
                 """
                 INSERT INTO workout_entries (
                     workout_id, workout_type, workout_display_name, reps, weight, logged_at, source_text
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 """,
                 [
                     (
@@ -459,7 +414,7 @@ class GymDB:
     def log_snooze(self, reason: str = "") -> None:
         with self._connect() as conn:
             conn.execute(
-                "INSERT INTO snoozes (logged_at, reason) VALUES (?, ?)",
+                "INSERT INTO snoozes (logged_at, reason) VALUES (%s, %s)",
                 (self._now_pacific_naive().isoformat(timespec="seconds"), reason.strip()),
             )
 
@@ -470,7 +425,7 @@ class GymDB:
                 SELECT logged_at, sets, note
                 FROM workouts
                 ORDER BY logged_at DESC
-                LIMIT ?
+                LIMIT %s
                 """,
                 (limit,),
             ).fetchall()
@@ -483,7 +438,7 @@ class GymDB:
                 """
                 SELECT COUNT(*) AS c
                 FROM workouts
-                WHERE logged_at >= ? AND logged_at < ?
+                WHERE logged_at >= %s AND logged_at < %s
                 """,
                 (
                     start.isoformat(timespec="seconds"),
@@ -503,7 +458,7 @@ class GymDB:
                 """
                 SELECT workout_type, MAX(workout_display_name) AS workout_display_name, COUNT(*) AS set_count
                 FROM workout_entries
-                WHERE logged_at >= ? AND logged_at < ?
+                WHERE logged_at >= %s AND logged_at < %s
                 GROUP BY workout_type
                 """,
                 (
@@ -527,7 +482,7 @@ class GymDB:
                 """
                 SELECT workout_type, COUNT(*) AS set_count
                 FROM workout_entries
-                WHERE logged_at >= ? AND logged_at < ?
+                WHERE logged_at >= %s AND logged_at < %s
                 GROUP BY workout_type
                 """,
                 (
@@ -558,7 +513,7 @@ class GymDB:
                 """
                 SELECT 1
                 FROM weekly_nudges
-                WHERE week_start = ? AND milestone = ?
+                WHERE week_start = %s AND milestone = %s
                 LIMIT 1
                 """,
                 (week_start.isoformat(), milestone),
@@ -569,8 +524,9 @@ class GymDB:
         with self._connect() as conn:
             conn.execute(
                 """
-                INSERT OR IGNORE INTO weekly_nudges (week_start, milestone, sent_at)
-                VALUES (?, ?, ?)
+                INSERT INTO weekly_nudges (week_start, milestone, sent_at)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (week_start, milestone) DO NOTHING
                 """,
                 (
                     week_start.isoformat(),
@@ -605,7 +561,7 @@ class GymDB:
                 """
                 SELECT workout_type, COUNT(*) AS set_count
                 FROM workout_entries
-                WHERE workout_id = ?
+                WHERE workout_id = %s
                 GROUP BY workout_type
                 """,
                 (workout_id,),

@@ -8,7 +8,7 @@ from gym_supervisor.visualize import generate_charts
 
 def run_bot() -> None:
     settings = load_settings()
-    db = GymDB(settings.db_path)
+    db = GymDB(settings.database_url)
     bot = GymSupervisorBot(
         token=settings.telegram_bot_token,
         db=db,
@@ -25,7 +25,7 @@ def run_bot() -> None:
 
 def run_charts() -> None:
     settings = load_settings()
-    files = generate_charts(settings.db_path)
+    files = generate_charts(settings.database_url)
     if not files:
         print("No data yet. Log some workouts/snoozes first.")
         return

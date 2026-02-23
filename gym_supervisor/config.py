@@ -17,7 +17,7 @@ class Settings:
     reminder_hour: int
     reminder_minute: int
     snooze_minutes: int
-    db_path: str
+    database_url: str
 
 
 def load_settings() -> Settings:
@@ -28,6 +28,9 @@ def load_settings() -> Settings:
         raise ValueError("Missing TELEGRAM_BOT_TOKEN in .env")
     if not user_id.isdigit():
         raise ValueError("TELEGRAM_USER_ID must be a numeric Telegram user ID")
+    database_url = os.getenv("DATABASE_URL", "").strip()
+    if not database_url:
+        raise ValueError("Missing DATABASE_URL in .env")
 
     return Settings(
         telegram_bot_token=token,
@@ -36,5 +39,5 @@ def load_settings() -> Settings:
         reminder_hour=int(os.getenv("REMINDER_HOUR", "18")),
         reminder_minute=int(os.getenv("REMINDER_MINUTE", "0")),
         snooze_minutes=int(os.getenv("SNOOZE_MINUTES", "60")),
-        db_path=os.getenv("DB_PATH", "/tmp/gym_supervisor.db"),
+        database_url=database_url,
     )

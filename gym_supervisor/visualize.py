@@ -1,27 +1,27 @@
 from __future__ import annotations
 
-import sqlite3
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import pandas as pd
+import psycopg
 import seaborn as sns
 
 
-def _read_table(db_path: str, table: str) -> pd.DataFrame:
-    with sqlite3.connect(db_path) as conn:
+def _read_table(database_url: str, table: str) -> pd.DataFrame:
+    with psycopg.connect(database_url) as conn:
         df = pd.read_sql_query(f"SELECT * FROM {table}", conn)
     if not df.empty and "logged_at" in df.columns:
         df["logged_at"] = pd.to_datetime(df["logged_at"])
     return df
 
 
-def generate_charts(db_path: str, out_dir: str = "charts") -> list[str]:
+def generate_charts(database_url: str, out_dir: str = "charts") -> list[str]:
     Path(out_dir).mkdir(parents=True, exist_ok=True)
     sns.set_theme(style="whitegrid")
 
-    workouts = _read_table(db_path, "workouts")
-    snoozes = _read_table(db_path, "snoozes")
+    workouts = _read_table(database_url, "workouts")
+    snoozes = _read_table(database_url, "snoozes")
 
     output_files: list[str] = []
 

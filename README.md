@@ -8,7 +8,7 @@ A local Telegram bot that:
   - Workout 3 by Sunday 4:00 PM
 - Logs workouts from button-guided flows (single or multi-message)
 - Stores each set entry with **workout type + reps + weight (lb)**
-- Maps workout moves to body areas (chest, back, legs, etc.) in SQLite
+- Maps workout moves to body areas (chest, back, legs, etc.) in Postgres
 - Logs snoozes/skips
 - Generates charts for workouts and snoozes
 
@@ -69,7 +69,7 @@ Outputs are written to `charts/`:
 
 ## 5) Notes
 
-- Data is stored in SQLite at `DB_PATH` (default: `data/gym_supervisor.db`).
+- Data is stored in Postgres via `DATABASE_URL`.
 - Bot only accepts logs from `TELEGRAM_USER_ID`.
 - Keep the bot process running.
 - Weekly nudges are evaluated every 5 minutes and sent once per milestone if you are behind.
@@ -79,7 +79,7 @@ Outputs are written to `charts/`:
 Important:
 - `python main.py bot` is for local polling only.
 - On Vercel, use webhook + serverless functions in `api/`.
-- SQLite is not durable on Vercel. Use a persistent hosted DB for production.
+- Configure a persistent Postgres database and set `DATABASE_URL`.
 
 ### A. Import project
 1. Push this repo to GitHub.
@@ -93,7 +93,7 @@ Set these in Vercel Project Settings -> Environment Variables:
 - `OPENAI_API_KEY`
 - `TELEGRAM_WEBHOOK_SECRET`
 - `CRON_SECRET`
-- `DB_PATH` (for local/dev only with SQLite; use persistent DB config in production)
+- `DATABASE_URL`
 
 ### C. Deploy
 1. Trigger first deployment in Vercel.
