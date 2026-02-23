@@ -7,7 +7,6 @@ from gym_supervisor.config import load_settings
 from gym_supervisor.db import GymDB
 
 _bot_instance: GymSupervisorBot | None = None
-_initialized = False
 
 
 def get_bot_instance() -> GymSupervisorBot:
@@ -30,21 +29,20 @@ def get_bot_instance() -> GymSupervisorBot:
     return _bot_instance
 
 
-async def ensure_initialized() -> GymSupervisorBot:
-    global _initialized
-    bot = get_bot_instance()
-    if not _initialized:
-        await bot.app.initialize()
-        _initialized = True
-    return bot
-
-
 async def process_telegram_update(payload: dict) -> None:
-    bot = await ensure_initialized()
-    update = Update.de_json(payload, bot.app.bot)
-    await bot.app.process_update(update)
+    bot = get_bot_instance()
+    await bot.app.initialize()
+    try:
+        update = Update.de_json(payload, bot.app.bot)
+        await bot.app.process_update(update)
+    finally:
+        await bot.app.shutdown()
 
 
 async def send_morning_greeting_once() -> None:
-    bot = await ensure_initialized()
-    await bot.send_morning_greeting_now(bot.app.bot)
+    bot = get_bot_instance()
+    await bot.app.initialize()
+    try:
+        await bot.send_morning_greeting_now(bot.app.bot)
+    finally:
+        await bot.app.shutdown()
