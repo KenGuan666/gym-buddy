@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import traceback
 from http.server import BaseHTTPRequestHandler
 
 from gym_supervisor.server import process_telegram_update
@@ -33,10 +34,14 @@ class handler(BaseHTTPRequestHandler):
 
         try:
             asyncio.run(process_telegram_update(payload))
-        except Exception:
+        except Exception as exc:
+            tb = traceback.format_exc()
+            print(tb)
             self.send_response(500)
             self.end_headers()
-            self.wfile.write(b"processing error")
+            self.wfile.write(
+                f"processing error: {exc!r}\n{tb}".encode("utf-8", errors="replace")
+            )
             return
 
         self.send_response(200)

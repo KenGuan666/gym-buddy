@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import traceback
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler
 from zoneinfo import ZoneInfo
@@ -34,10 +35,12 @@ class handler(BaseHTTPRequestHandler):
 
         try:
             asyncio.run(send_morning_greeting_once())
-        except Exception:
+        except Exception as exc:
+            tb = traceback.format_exc()
+            print(tb)
             self.send_response(500)
             self.end_headers()
-            self.wfile.write(b"failed")
+            self.wfile.write(f"failed: {exc!r}\n{tb}".encode("utf-8", errors="replace"))
             return
 
         self.send_response(200)
