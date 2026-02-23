@@ -60,6 +60,8 @@ WEEKLY_MILESTONES = [
 AWAITING_WORKOUT_LOG_KEY = "awaiting_workout_log"
 WORKOUT_DRAFT_KEY = "workout_draft"
 MENU_TRIGGERS = {"hi", "hello", "hey", "menu", "start"}
+TRACKED_BODY_AREAS = ("chest", "shoulders", "back", "legs", "core")
+NUDGE_PRIORITY = ("chest", "back", "shoulders", "legs", "core")
 
 
 class GymSupervisorBot:
@@ -343,6 +345,25 @@ class GymSupervisorBot:
         lines.append("")
         lines.extend(self._format_breakdown_lines("By body area:", by_body_area))
         return lines
+
+    def _nudge_focus_text(self, now: datetime) -> str:
+        week_ago = now - timedelta(days=7)
+        by_body_area = self._db.summarize_sets_by_body_area_between(week_ago, now)
+        trained = {
+            area
+            for area, count in by_body_area.items()
+            if area in TRACKED_BODY_AREAS and count > 0
+        }
+        missing = [area for area in NUDGE_PRIORITY if area not in trained]
+        if not missing:
+            return "You've trained chest, back, shoulders, legs, and core in the past 7 days."
+        if len(missing) == 1:
+            return f"Suggested focus: {missing[0]} (not trained in the past 7 days)."
+        return (
+            "Suggested focus order (not trained in the past 7 days): "
+            + " > ".join(missing)
+            + "."
+        )
 
     async def _send_period_summary(
         self, update: Update, period: str, context: ContextTypes.DEFAULT_TYPE
@@ -649,6 +670,7 @@ class GymSupervisorBot:
                 text=(
                     f"Nudge: You haven't completed workout #{milestone.milestone} by "
                     f"{milestone.label}.\n"
+                    f"{self._nudge_focus_text(now)}\n"
                     "Tap I trained and log now."
                 ),
                 reply_markup=self._reminder_keyboard(),
