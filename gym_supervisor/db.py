@@ -300,16 +300,17 @@ class GymDB:
             )
             for move_name, body_area in MOVE_BODY_AREA_SEED
         ]
-        conn.executemany(
-            """
-            INSERT INTO move_body_areas (move_key, display_label, body_area)
-            VALUES (%s, %s, %s)
-            ON CONFLICT(move_key) DO UPDATE SET
-                display_label = excluded.display_label,
-                body_area = excluded.body_area
-            """,
-            [row for row in rows if row[0]],
-        )
+        with conn.cursor() as cur:
+            cur.executemany(
+                """
+                INSERT INTO move_body_areas (move_key, display_label, body_area)
+                VALUES (%s, %s, %s)
+                ON CONFLICT(move_key) DO UPDATE SET
+                    display_label = excluded.display_label,
+                    body_area = excluded.body_area
+                """,
+                [row for row in rows if row[0]],
+            )
 
     def _display_label_for_key(self, conn: psycopg.Connection, workout_key: str) -> str:
         row = conn.execute(
@@ -337,14 +338,15 @@ class GymDB:
             if canonical_key != current_type or canonical_label != current_label:
                 updates.append((canonical_key, canonical_label, row_id))
         if updates:
-            conn.executemany(
-                """
-                UPDATE workout_entries
-                SET workout_type = %s, workout_display_name = %s
-                WHERE id = %s
-                """,
-                updates,
-            )
+            with conn.cursor() as cur:
+                cur.executemany(
+                    """
+                    UPDATE workout_entries
+                    SET workout_type = %s, workout_display_name = %s
+                    WHERE id = %s
+                    """,
+                    updates,
+                )
 
     def _lookup_body_area(self, conn: psycopg.Connection, workout_type: str) -> str:
         key = self._normalize_workout_type_key(workout_type)
@@ -389,26 +391,27 @@ class GymDB:
             )
             workout_id = int(cur.fetchone()["id"])
 
-            conn.executemany(
-                """
-                INSERT INTO workout_entries (
-                    workout_id, workout_type, workout_display_name, reps, weight, logged_at, source_text
-                )
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
-                """,
-                [
-                    (
-                        workout_id,
-                        workout_key,
-                        display_name,
-                        reps,
-                        weight,
-                        now,
-                        note.strip(),
+            with conn.cursor() as cur:
+                cur.executemany(
+                    """
+                    INSERT INTO workout_entries (
+                        workout_id, workout_type, workout_display_name, reps, weight, logged_at, source_text
                     )
-                    for workout_key, display_name, reps, weight in normalized_entries
-                ],
-            )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    [
+                        (
+                            workout_id,
+                            workout_key,
+                            display_name,
+                            reps,
+                            weight,
+                            now,
+                            note.strip(),
+                        )
+                        for workout_key, display_name, reps, weight in normalized_entries
+                    ],
+                )
             return workout_id
 
     def log_snooze(self, reason: str = "") -> None:
