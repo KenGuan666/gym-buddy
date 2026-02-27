@@ -716,6 +716,9 @@ class GymSupervisorBot:
         await update.message.reply_text("\n".join(lines))
 
     async def check_weekly_deadline_nudges(self, context: ContextTypes.DEFAULT_TYPE) -> None:
+        await self.send_weekly_deadline_nudges_now(context.bot)
+
+    async def send_weekly_deadline_nudges_now(self, bot) -> None:
         now = self._now_pacific_naive()
         week_start = self._week_start(now)
         week_start_date = self._week_start_date(now)
@@ -734,7 +737,7 @@ class GymSupervisorBot:
             if completed_before_deadline >= milestone.required_workouts:
                 continue
 
-            await context.bot.send_message(
+            await bot.send_message(
                 chat_id=self._config.allowed_user_id,
                 text=(
                     f"Nudge: You haven't completed workout #{milestone.milestone} by "

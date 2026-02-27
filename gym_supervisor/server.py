@@ -46,3 +46,12 @@ async def send_morning_greeting_once() -> None:
         await bot.send_morning_greeting_now(bot.app.bot)
     finally:
         await bot.app.shutdown()
+
+
+async def send_weekly_nudges_once() -> None:
+    bot = get_bot_instance()
+    await bot.app.initialize()
+    try:
+        await bot.send_weekly_deadline_nudges_now(bot.app.bot)
+    finally:
+        await bot.app.shutdown()

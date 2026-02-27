@@ -118,3 +118,4 @@ curl "https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/getWebhookInfo"
 - `vercel.json` config runs `/api/morning_greeting` every hour.
 - Endpoint only sends when current Pacific hour is 8, so DST remains correct.
 - It requires either `CRON_SECRET` bearer auth (recommended) or Vercel cron header.
+- `vercel.json` also runs `/api/weekly_nudges` every 5 minutes to evaluate behind-schedule nudges in webhook deployments.

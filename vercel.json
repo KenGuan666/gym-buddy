@@ -3,6 +3,10 @@
     {
       "path": "/api/morning_greeting",
       "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/weekly_nudges",
+      "schedule": "*/5 * * * *"
     }
   ]
 }
